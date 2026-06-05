@@ -19,12 +19,12 @@ def rename_dcn_to_dcm(root_dir: Path) -> int:
     for file_path in root_dir.rglob("*.dcn"):
         target_path = file_path.with_suffix(".dcm")
         if target_path.exists():
-            print(f"Skip: {target_path} already exists"
+            print(f"Skip: {target_path} already exists")
             continue
 
         file_path.rename(target_path)
         renamed_count += 1
-        print(f"Renamed: {file_path} -> {target_path}")
+        # print(f"Renamed: {file_path} -> {target_path}")
 
     return renamed_count
 
