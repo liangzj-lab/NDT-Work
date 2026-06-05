@@ -1,0 +1,14 @@
+# 数据目录，不上传 GitHub
+ZJDKY/Data/
+ZJDKY/Data_png/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# VS Code 配置，可按需保留
+.vscode/
+
+# 临时文件
+*.tmp
+*.log
