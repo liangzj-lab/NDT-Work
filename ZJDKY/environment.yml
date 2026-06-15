@@ -1,0 +1,16 @@
+name: dcm_convert
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy>=2.0
+  - pydicom>=3.0
+  - pillow>=10.0
+  - opencv>=4.8
+  - pip
+  - pip:
+      # Used by hello.py to verify the PyTorch environment.
+      # For CUDA-specific builds, install torch separately with the command
+      # from https://pytorch.org/get-started/locally/
+      - torch>=2.0

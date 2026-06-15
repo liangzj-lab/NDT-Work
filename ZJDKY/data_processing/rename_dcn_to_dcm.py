@@ -30,7 +30,7 @@ def rename_dcn_to_dcm(root_dir: Path) -> int:
 
 
 def main() -> None:
-    input_dir = Path(r"D:\项目文件\执行项目文件\PG25-LX19 浙江锅检所铝焊缝智能超声检测技术研究\执行过程文件\线夹图像\2026.3.16日烟台220kV神西线\2026.3.16日烟台220kV神西线\114号塔")
+    input_dir = Path(r"D:\项目文件\执行项目文件\PG25-LX19 浙江锅检所铝焊缝智能超声检测技术研究\执行过程文件\线夹图像\2026.3.28日天津检测220kV东范一线")
 
     renamed_count = rename_dcn_to_dcm(input_dir)
     print(f"Done. Renamed {renamed_count} file(s).")

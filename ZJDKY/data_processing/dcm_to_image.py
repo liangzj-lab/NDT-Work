@@ -26,10 +26,14 @@ import argparse
 from pathlib import Path
 from typing import Optional, Tuple
 
-import cv2
 import numpy as np
 import pydicom
 from PIL import Image
+
+try:
+    import cv2
+except ModuleNotFoundError:
+    cv2 = None
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +161,15 @@ def _window_otsu(pixel_array: np.ndarray) -> tuple[float, float]:
 # 图像增强
 # ---------------------------------------------------------------------------
 
+def _require_cv2() -> None:
+    if cv2 is None:
+        raise ModuleNotFoundError(
+            "OpenCV is required for enhance modes 'clahe', 'sharpen', and 'ndt'. "
+            "Install it in the dcm_convert environment with: "
+            "conda install -n dcm_convert -c conda-forge opencv"
+        )
+
+
 def enhance_clahe(img: np.ndarray, clip_limit: float = 2.0, tile_size: int = 8) -> np.ndarray:
     """
     CLAHE（Contrast Limited Adaptive Histogram Equalization）
@@ -173,6 +186,7 @@ def enhance_clahe(img: np.ndarray, clip_limit: float = 2.0, tile_size: int = 8) 
     -------
     uint8 numpy array
     """
+    _require_cv2()
     clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_size, tile_size))
     return clahe.apply(img)
 
@@ -202,6 +216,7 @@ def enhance_sharpen(img: np.ndarray, strength: float = 1.0) -> np.ndarray:
 
     流程: 高斯模糊 → 原图 + strength * (原图 - 模糊图)
     """
+    _require_cv2()
     blurred = cv2.GaussianBlur(img, (0, 0), sigmaX=2.0)
     detail = img.astype(np.float32) - blurred.astype(np.float32)
     sharpened = img.astype(np.float32) + strength * detail
@@ -219,6 +234,7 @@ def enhance_ndt(img: np.ndarray) -> np.ndarray:
     适用于射线无损检测图像（铝焊缝等）。
     """
     # 1) 双边滤波：保边去噪，去除超声散斑
+    _require_cv2()
     denoised = cv2.bilateralFilter(img, d=5, sigmaColor=30, sigmaSpace=30)
 
     # 2) CLAHE：局部对比度增强
@@ -340,52 +356,65 @@ def convert_dcm_to_image(
 
 
 def main() -> None:
+    # Edit these values to run the script directly from an IDE.
+    input_dir = Path(r"D:\项目文件\执行项目文件\PG25-LX19 浙江锅检所铝焊缝智能超声检测技术研究\执行过程文件\线夹图像\2026.3.28日天津检测220kV东范一线")
+    output_dir = None
+    output_format = "png"
+    window_mode = "auto"
+    enhance_mode = "gamma"
+    gamma = 0.7
+    percentile_low = 2.0
+    percentile_high = 98.0
+    clahe_clip = 2.0
+    clahe_tile = 8
+    sharpen_strength = 1.0
+
     parser = argparse.ArgumentParser(
         description="DICOM (.dcm) 转 JPG/PNG，支持自动窗宽窗位调整 + 图像增强"
     )
     parser.add_argument(
-        "--input_dir", type=Path, default=Path("Data"),
+        "--input_dir", type=Path, default=input_dir,
         help="DICOM 文件所在目录（默认: Data）"
     )
     parser.add_argument(
-        "--output_dir", type=Path, default=None,
+        "--output_dir", type=Path, default=output_dir,
         help="输出目录（默认: 在 input_dir 同级自动生成 {input_dir_name}_png/）"
     )
     parser.add_argument(
-        "--format", choices=["jpg", "png"], default="png",
+        "--format", choices=["jpg", "png"], default=output_format,
         help="输出格式（默认: png）"
     )
     parser.add_argument(
-        "--mode", choices=["auto", "percentile", "minmax", "otsu"], default="auto",
+        "--mode", choices=["auto", "percentile", "minmax", "otsu"], default=window_mode,
         help="窗宽窗位模式（默认: auto）"
     )
     parser.add_argument(
-        "--percentile_low", type=float, default=2.0,
+        "--percentile_low", type=float, default=percentile_low,
         help="percentile 模式下的下百分位（默认: 2）"
     )
     parser.add_argument(
-        "--percentile_high", type=float, default=98.0,
+        "--percentile_high", type=float, default=percentile_high,
         help="percentile 模式下的上百分位（默认: 98）"
     )
     parser.add_argument(
         "--enhance", choices=["none", "clahe", "gamma", "sharpen", "ndt"],
-        default="gamma",
+        default=enhance_mode,
         help="图像增强模式（默认: gamma）"
     )
     parser.add_argument(
-        "--gamma", type=float, default=0.7,
+        "--gamma", type=float, default=gamma,
         help="gamma 校正值，<1 提亮暗区（默认: 0.7），仅 --enhance gamma 时生效"
     )
     parser.add_argument(
-        "--clahe_clip", type=float, default=2.0,
+        "--clahe_clip", type=float, default=clahe_clip,
         help="CLAHE 对比度裁剪阈值（默认: 2.0），仅 --enhance clahe 时生效"
     )
     parser.add_argument(
-        "--clahe_tile", type=int, default=8,
+        "--clahe_tile", type=int, default=clahe_tile,
         help="CLAHE 窗口大小（默认: 8），仅 --enhance clahe 时生效"
     )
     parser.add_argument(
-        "--sharpen_strength", type=float, default=1.0,
+        "--sharpen_strength", type=float, default=sharpen_strength,
         help="锐化强度（默认: 1.0），仅 --enhance sharpen 时生效"
     )
     args = parser.parse_args()
@@ -399,7 +428,10 @@ def main() -> None:
     else:
         output_dir = args.output_dir
 
-    dcm_files = sorted(args.input_dir.glob("*.dcm"))
+    dcm_files = sorted(
+        path for path in args.input_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() == ".dcm"
+    )
     if not dcm_files:
         print(f"No .dcm files found in {args.input_dir}")
         return
@@ -414,13 +446,15 @@ def main() -> None:
     elif args.enhance == "sharpen":
         enhance_kwargs["strength"] = args.sharpen_strength
 
-    print(f"Found {len(dcm_files)} DICOM file(s) in {args.input_dir}")
+    print(f"Found {len(dcm_files)} DICOM file(s) under {args.input_dir}")
     print(f"Mode: {args.mode}, Enhance: {args.enhance}, Format: {args.format}, Output: {output_dir}\n")
 
     for dcm_file in dcm_files:
+        relative_parent = dcm_file.parent.relative_to(args.input_dir)
+        current_output_dir = output_dir / relative_parent
         output_path = convert_dcm_to_image(
             dcm_path=dcm_file,
-            output_dir=output_dir,
+            output_dir=current_output_dir,
             output_format=args.format,
             mode=args.mode,
             percentile_low=args.percentile_low,

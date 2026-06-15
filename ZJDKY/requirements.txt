@@ -1,0 +1,9 @@
+numpy>=2.0
+pydicom>=3.0
+Pillow>=10.0
+opencv-python>=4.8
+
+# Used by hello.py to verify the PyTorch environment.
+# For CUDA-specific builds, install torch from https://pytorch.org/get-started/locally/
+# with the command that matches your CUDA version.
+torch>=2.0
