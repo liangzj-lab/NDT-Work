@@ -10,6 +10,7 @@ from pathlib import Path
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
+from region_postprocess import select_candidates
 from region_dataset import DEFAULT_OUTPUT_DIR, ID_TO_LABEL, NUM_CLASSES, pil_to_float_tensor
 from train_region_detector import build_model
 
@@ -27,6 +28,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--score-threshold", type=float, default=0.50)
+    parser.add_argument("--candidate-score-threshold", type=float, default=0.05)
+    parser.add_argument("--selection", default="geometry", choices=("score", "geometry"))
+    parser.add_argument("--max-candidates-per-label", type=int, default=8)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--min-size", type=int, default=None)
     parser.add_argument("--max-size", type=int, default=None)
@@ -79,17 +83,38 @@ def draw_predictions(image_path: Path, rows: list[dict], out_path: Path) -> None
 
 
 @torch.no_grad()
-def predict_image(model, image_path: Path, device: torch.device, score_threshold: float) -> list[dict]:
+def predict_image(
+    model,
+    image_path: Path,
+    device: torch.device,
+    score_threshold: float,
+    candidate_score_threshold: float,
+    selection: str,
+    max_candidates_per_label: int,
+) -> list[dict]:
     image = Image.open(image_path).convert("RGB")
     tensor = pil_to_float_tensor(image).to(device)
     output = model([tensor])[0]
+    pred_boxes = output["boxes"].detach().cpu()
+    pred_labels = output["labels"].detach().cpu()
+    pred_scores = output["scores"].detach().cpu()
+    selected = select_candidates(
+        pred_boxes,
+        pred_labels,
+        pred_scores,
+        sorted(ID_TO_LABEL),
+        candidate_score_threshold,
+        selection,
+        max_candidates_per_label,
+    )
     rows: list[dict] = []
-    for box, label, score in zip(output["boxes"], output["labels"], output["scores"]):
-        score_value = float(score.detach().cpu().item())
-        label_id = int(label.detach().cpu().item())
-        if score_value < score_threshold or label_id not in ID_TO_LABEL:
+    for label_id in sorted(ID_TO_LABEL):
+        if label_id not in selected:
             continue
-        x1, y1, x2, y2 = [float(value) for value in box.detach().cpu().tolist()]
+        box, score_value, _ = selected[label_id]
+        if score_value < score_threshold and selection == "score":
+            continue
+        x1, y1, x2, y2 = [float(value) for value in box.tolist()]
         rows.append(
             {
                 "image_path": str(image_path),
@@ -152,7 +177,15 @@ def main() -> int:
     all_anomalies: list[dict] = []
     viz_dir = args.output_dir / "visualizations" / "predictions"
     for index, image_path in enumerate(image_paths):
-        rows = predict_image(model, image_path, device, args.score_threshold)
+        rows = predict_image(
+            model,
+            image_path,
+            device,
+            args.score_threshold,
+            args.candidate_score_threshold,
+            args.selection,
+            args.max_candidates_per_label,
+        )
         all_rows.extend(rows)
         all_anomalies.extend(anomaly_for_rows(image_path, rows))
         draw_predictions(image_path, rows, viz_dir / f"pred_{index:04d}_{image_path.stem}.png")
@@ -177,6 +210,8 @@ def main() -> int:
         "prediction_count": len(all_rows),
         "anomaly_count": len(all_anomalies),
         "score_threshold": args.score_threshold,
+        "candidate_score_threshold": args.candidate_score_threshold,
+        "selection": args.selection,
     }
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
