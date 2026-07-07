@@ -184,8 +184,9 @@ def load_splits(path: Path) -> dict[str, list[RegionSample]]:
 
 
 class RegionDetectionDataset(torch.utils.data.Dataset):
-    def __init__(self, samples: list[RegionSample]):
+    def __init__(self, samples: list[RegionSample], hflip_prob: float = 0.0):
         self.samples = samples
+        self.hflip_prob = hflip_prob
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -193,9 +194,16 @@ class RegionDetectionDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         sample = self.samples[idx]
         image = Image.open(sample.image_path).convert("RGB")
-        image_tensor = pil_to_float_tensor(image)
         boxes = torch.as_tensor(sample.boxes, dtype=torch.float32)
         labels = torch.as_tensor(sample.labels, dtype=torch.int64)
+        if self.hflip_prob > 0 and random.random() < self.hflip_prob:
+            width = image.width
+            image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+            flipped_boxes = boxes.clone()
+            flipped_boxes[:, 0] = width - boxes[:, 2]
+            flipped_boxes[:, 2] = width - boxes[:, 0]
+            boxes = flipped_boxes
+        image_tensor = pil_to_float_tensor(image)
         area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
         target = {
             "boxes": boxes,

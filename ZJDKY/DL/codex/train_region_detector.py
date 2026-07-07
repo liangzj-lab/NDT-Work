@@ -8,9 +8,11 @@ import json
 import time
 from pathlib import Path
 
+from PIL import Image  # noqa: F401  # Preload Pillow DLLs before torch/torchvision on Windows.
 import torch
 from torch.utils.data import DataLoader
 from torchvision.models.detection import fasterrcnn_resnet50_fpn
+from torchvision.models import ResNet50_Weights
 
 from prepare_region_data import main as prepare_data_main
 from region_dataset import (
@@ -38,6 +40,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--min-size", type=int, default=512)
     parser.add_argument("--max-size", type=int, default=1024)
+    parser.add_argument("--hflip-prob", type=float, default=0.0)
+    parser.add_argument("--pretrained-backbone", action="store_true")
     parser.add_argument("--score-threshold", type=float, default=0.05)
     parser.add_argument("--iou-threshold", type=float, default=0.50)
     parser.add_argument("--device", default="cuda")
@@ -45,11 +49,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_model(min_size: int, max_size: int):
+def build_model(min_size: int, max_size: int, pretrained_backbone: bool = False):
+    backbone_weights = ResNet50_Weights.DEFAULT if pretrained_backbone else None
     try:
         return fasterrcnn_resnet50_fpn(
             weights=None,
-            weights_backbone=None,
+            weights_backbone=backbone_weights,
             num_classes=NUM_CLASSES,
             min_size=min_size,
             max_size=max_size,
@@ -57,7 +62,7 @@ def build_model(min_size: int, max_size: int):
     except TypeError:
         return fasterrcnn_resnet50_fpn(
             pretrained=False,
-            pretrained_backbone=False,
+            pretrained_backbone=pretrained_backbone,
             num_classes=NUM_CLASSES,
             min_size=min_size,
             max_size=max_size,
@@ -201,7 +206,7 @@ def main() -> int:
     prepare_if_needed(args)
 
     splits = load_splits(args.output_dir / "splits.json")
-    train_dataset = RegionDetectionDataset(splits["train"])
+    train_dataset = RegionDetectionDataset(splits["train"], hflip_prob=args.hflip_prob)
     val_dataset = RegionDetectionDataset(splits["val"])
     train_loader = DataLoader(
         train_dataset,
@@ -219,7 +224,7 @@ def main() -> int:
     )
 
     device = torch.device(args.device)
-    model = build_model(args.min_size, args.max_size).to(device)
+    model = build_model(args.min_size, args.max_size, args.pretrained_backbone).to(device)
     params = [param for param in model.parameters() if param.requires_grad]
     optimizer = torch.optim.SGD(
         params,
@@ -230,6 +235,7 @@ def main() -> int:
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.1)
 
     best_map50 = -1.0
+    best_mean_iou = -1.0
     history: list[dict] = []
     for epoch in range(1, args.epochs + 1):
         started = time.time()
@@ -274,12 +280,17 @@ def main() -> int:
             "model_args": {"min_size": args.min_size, "max_size": args.max_size},
         }
         torch.save(checkpoint, args.output_dir / "last.pt")
-        if metrics["map50"] >= best_map50:
+        if (
+            metrics["map50"] > best_map50
+            or (metrics["map50"] == best_map50 and metrics["mean_iou"] > best_mean_iou)
+        ):
             best_map50 = metrics["map50"]
+            best_mean_iou = metrics["mean_iou"]
             torch.save(checkpoint, args.output_dir / "best.pt")
 
     final_metrics = {
         "best_map50": best_map50,
+        "best_mean_iou": best_mean_iou,
         "last": history[-1] if history else {},
         "history": history,
     }
