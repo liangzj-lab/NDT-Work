@@ -2,6 +2,18 @@
 ZJDKY/Data/
 ZJDKY/Data_png/
 
+# Codex 深度学习生成结果：图片预览、预测结果、训练日志等不上传
+ZJDKY/DL/codex/outputs/
+
+# 允许上传正式区域检测模型权重
+!ZJDKY/DL/codex/outputs/
+ZJDKY/DL/codex/outputs/*
+!ZJDKY/DL/codex/outputs/region_detector/
+ZJDKY/DL/codex/outputs/region_detector/*
+!ZJDKY/DL/codex/outputs/region_detector/*.pt
+!ZJDKY/DL/codex/outputs/region_detector/*.pth
+!ZJDKY/DL/codex/outputs/region_detector/*.onnx
+
 # Python 缓存
 __pycache__/
 *.pyc
