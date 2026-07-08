@@ -1,7 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$python = "C:\Users\Administrator\.conda\envs\pytorch_env\python.exe"
+# Other workstation:
+# $python = "C:\Users\Administrator\.conda\envs\pytorch_env\python.exe"
+
+# Current workstation:
+$python = "D:\Anaconda\envs\PyTorch\python.exe"
 $server = Join-Path $repoRoot "ZJDKY\DL\codex\region_detector_web_server.py"
 
 if (-not (Test-Path -LiteralPath $python)) {
